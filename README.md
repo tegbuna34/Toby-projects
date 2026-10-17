@@ -13,7 +13,7 @@ npm test           # scoring + local-store tests
 npm run build      # outputs dist/ (static site; service worker precache is stamped at build)
 ```
 
-To install on iPhone, host `dist/` anywhere that serves HTTPS (GitHub Pages, Netlify, Cloudflare Pages, …), open it in Safari → Share → **Add to Home Screen**. The build uses relative paths, so it works from a sub-path.
+Pushing to the default branch deploys `dist/` to GitHub Pages via `.github/workflows/deploy.yml` (one-time: repo Settings → Pages → Source: GitHub Actions). To install on iPhone, host `dist/` anywhere that serves HTTPS (GitHub Pages, Netlify, Cloudflare Pages, …), open it in Safari → Share → **Add to Home Screen**. The build uses relative paths, so it works from a sub-path.
 
 ## How the blind rule is enforced
 
