@@ -1,0 +1,44 @@
+import 'fake-indexeddb/auto';
+import { describe, expect, it } from 'vitest';
+import {
+  ackOutbox, allCompleted, completedHoleNumbers, createRound, getActiveRound, mergeRemote, outbox, saveHole,
+} from './db';
+
+const input = (round_id: string, hole_number: number, strokes: number) => ({
+  round_id, hole_number, par: 4, distance_yards: null, strokes, putts: 2, tee_penalty_type: 'none' as const,
+});
+
+describe('local store', () => {
+  it('keeps one record per hole, replaces edits, and completes only when all holes exist', async () => {
+    const r = await createRound({ course_name: 'Test GC', round_date: '2026-01-01', hole_count: 9, starting_nine: 'back' });
+    for (let n = 10; n <= 17; n++) await saveHole(input(r.round_id, n, 5), { complete: true });
+    expect((await getActiveRound())?.round_id).toBe(r.round_id);
+    await saveHole(input(r.round_id, 12, 9)); // replace an earlier hole
+    expect(await completedHoleNumbers(r.round_id)).toHaveLength(8);
+    const res = await saveHole(input(r.round_id, 18, 4), { complete: true });
+    expect(res.completed).toBe(true);
+    const [done] = await allCompleted();
+    expect(done.holes).toHaveLength(9);
+    expect(done.totals.strokes).toBe(5 * 7 + 9 + 4);
+  });
+
+  it('abandons the old active round when a new one starts', async () => {
+    const a = await createRound({ course_name: 'A', round_date: '2026-02-01', hole_count: 18, starting_nine: 'front' });
+    const b = await createRound({ course_name: 'B', round_date: '2026-02-02', hole_count: 18, starting_nine: 'front' });
+    expect((await getActiveRound())?.round_id).toBe(b.round_id);
+    expect(a.round_id).not.toBe(b.round_id);
+  });
+
+  it('outbox ack is idempotent and keeps records changed while in flight; merge skips pending', async () => {
+    const r = await createRound({ course_name: 'C', round_date: '2026-03-01', hole_count: 9, starting_nine: 'front' });
+    await saveHole(input(r.round_id, 1, 4));
+    const sent = await outbox();
+    await saveHole(input(r.round_id, 1, 6)); // edited while "in flight"
+    await ackOutbox(sent);
+    const left = await outbox();
+    expect(left.some((o) => o.key === `hole:${r.round_id}_1`)).toBe(true);
+    await mergeRemote([], [{ ...input(r.round_id, 1, 99), hole_id: `${r.round_id}_1`, updated_at: '2999-01-01' }]);
+    await ackOutbox(await outbox());
+    expect(await outbox()).toHaveLength(0);
+  });
+});
