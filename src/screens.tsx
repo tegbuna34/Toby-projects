@@ -261,6 +261,7 @@ export function Results({ id, fresh, go }: { id: string; fresh?: boolean; go: Go
   const { round, holes } = data;
   const t = totals(holes);
   const split = round.hole_count === 18 ? nines(holes) : null;
+  const notes = holes.filter((h) => h.note);
 
   return (
     <Screen>
@@ -305,6 +306,18 @@ export function Results({ id, fresh, go }: { id: string; fresh?: boolean; go: Go
             </tbody>
           </table>
         </details>
+
+        {notes.length > 0 && (
+          <section className="card">
+            <span className="label">Hole notes</span>
+            {notes.map((h) => (
+              <div key={h.hole_id} className="kv note-row">
+                <span>Hole {h.hole_number}</span>
+                <span>{h.note}</span>
+              </div>
+            ))}
+          </section>
+        )}
 
         <div className="stack">
           <button className="btn" onClick={() => go({ name: 'home' })}>Return Home</button>

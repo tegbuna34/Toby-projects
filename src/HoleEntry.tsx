@@ -111,6 +111,16 @@ export function HoleEntry(props: {
             ))}
           </div>
         </section>
+
+        <section>
+          <label className="label" htmlFor="note">
+            {mode === 'replace' ? 'Note (blank keeps the existing note)' : 'Note (optional)'}
+          </label>
+          <textarea
+            id="note" className="input note" rows={3} maxLength={1000} placeholder="Anything to remember about this hole"
+            value={form.note} onChange={(e) => update({ ...form, note: e.target.value })}
+          />
+        </section>
       </div>
 
       <div className="footer-bar" style={{ marginTop: 20 }}>

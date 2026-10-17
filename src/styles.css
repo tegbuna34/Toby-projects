@@ -139,3 +139,8 @@ details[open] summary::after { content: '–'; }
 .round-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .round-card .right { text-align: right; }
 .chart text { fill: var(--muted); font-size: 10px; }
+
+.input.note { min-height: 88px; padding: 12px 14px; resize: none; line-height: 1.4; }
+.note-row { gap: 16px; align-items: flex-start; }
+.note-row span:last-child { text-align: right; font-weight: 400; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-row span:first-child { white-space: nowrap; }

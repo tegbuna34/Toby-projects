@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import {
-  ackOutbox, allCompleted, completedHoleNumbers, createRound, getActiveRound, mergeRemote, outbox, saveHole,
+  ackOutbox, allCompleted, holesForRound, completedHoleNumbers, createRound, getActiveRound, mergeRemote, outbox, saveHole,
 } from './db';
 
 const input = (round_id: string, hole_number: number, strokes: number) => ({
@@ -40,5 +40,14 @@ describe('local store', () => {
     await mergeRemote([], [{ ...input(r.round_id, 1, 99), hole_id: `${r.round_id}_1`, updated_at: '2999-01-01' }]);
     await ackOutbox(await outbox());
     expect(await outbox()).toHaveLength(0);
+  });
+
+  it('keeps a hole note when a blind replacement leaves it blank, and overwrites it when given one', async () => {
+    const r = await createRound({ course_name: 'N', round_date: '2026-04-01', hole_count: 9, starting_nine: 'front' });
+    await saveHole({ ...input(r.round_id, 1, 4), note: 'pulled it left' });
+    await saveHole(input(r.round_id, 1, 5)); // replace with no note
+    expect((await holesForRound(r.round_id))[0].note).toBe('pulled it left');
+    await saveHole({ ...input(r.round_id, 1, 5), note: 'tempo fixed it' });
+    expect((await holesForRound(r.round_id))[0].note).toBe('tempo fixed it');
   });
 });

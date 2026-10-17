@@ -161,6 +161,11 @@ export async function saveHole(
   const ts = nowIso();
   const hole: Hole = { ...input, hole_id: holeId(input.round_id, input.hole_number), updated_at: ts };
   const completed = await run(['rounds', 'holes', 'drafts', 'outbox'], 'readwrite', async (s) => {
+    // A blind replacement can't show the old note, so a blank one keeps it rather than wiping it.
+    if (!hole.note) {
+      const prev = await wrap<Hole | undefined>(s.holes.get(hole.hole_id));
+      hole.note = prev?.note ?? '';
+    }
     s.holes.put(hole);
     enqueue(s, 'hole', hole.hole_id);
     s.drafts.delete(hole.round_id);

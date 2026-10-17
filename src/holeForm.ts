@@ -8,10 +8,11 @@ export interface FormState {
   putts: number;
   puttsTouched: boolean;
   penalty: PenaltyType;
+  note: string;
 }
 
 export const emptyForm: FormState = {
-  par: null, distance: '', strokes: null, strokesTouched: false, putts: 2, puttsTouched: false, penalty: 'none',
+  par: null, distance: '', strokes: null, strokesTouched: false, putts: 2, puttsTouched: false, penalty: 'none', note: '',
 };
 
 export const MAX_PUTTS = 10;
@@ -50,6 +51,7 @@ export function toHoleInput(roundId: string, holeNumber: number, f: FormState): 
     strokes: f.strokes!,
     putts: f.putts,
     tee_penalty_type: f.penalty,
+    note: f.note.trim(),
   };
 }
 
@@ -59,6 +61,6 @@ export const toDraft = (roundId: string, holeNumber: number, f: FormState): Draf
 
 export function fromDraft(d: Draft | undefined, holeNumber: number): FormState {
   if (!d || d.hole_number !== holeNumber) return emptyForm;
-  const { par, distance, strokes, strokesTouched, putts, puttsTouched, penalty } = d;
-  return { par, distance, strokes, strokesTouched, putts, puttsTouched, penalty };
+  const { par, distance, strokes, strokesTouched, putts, puttsTouched, penalty, note } = d;
+  return { par, distance, strokes, strokesTouched, putts, puttsTouched, penalty, note: note ?? '' };
 }
