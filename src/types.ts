@@ -23,6 +23,7 @@ export interface Hole {
   strokes: number;
   putts: number;
   tee_penalty_type: PenaltyType;
+  note?: string; // free-text thought on the hole; blind like everything else until the round ends
   updated_at: string;
 }
 
@@ -37,6 +38,7 @@ export interface Draft {
   putts: number;
   puttsTouched: boolean;
   penalty: PenaltyType;
+  note?: string;
 }
 
 export interface OutboxItem {

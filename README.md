@@ -37,4 +37,5 @@ The token is stored only on your device and checked by the script on every reque
 
 - Starting a new round while one is unfinished asks for confirmation; the old round is kept with status `abandoned` (hidden from history and stats) rather than deleted.
 - Rounds carry an extra `updated_at` column (used for sync merging); penalties are a classification only and never change strokes.
+- Each hole has an optional free-text note. It is blind like everything else (never shown after the hole is saved) and appears under "Hole notes" on the results screen. A blind replacement with a blank note keeps the existing note. Existing Sheets get a `note` column added automatically on the next sync (redeploy `Code.gs`).
 - Stats and charts keep 9- and 18-hole rounds separate and use completed rounds only.
