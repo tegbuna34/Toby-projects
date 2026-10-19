@@ -168,7 +168,8 @@ export async function saveHole(
     }
     s.holes.put(hole);
     enqueue(s, 'hole', hole.hole_id);
-    s.drafts.delete(hole.round_id);
+    const draft = await wrap<Draft | undefined>(s.drafts.get(hole.round_id));
+    if (draft?.hole_number === hole.hole_number) s.drafts.delete(hole.round_id);
     if (!opts.complete) return false;
     const round = await wrap<Round | undefined>(s.rounds.get(hole.round_id));
     if (!round) return false;
