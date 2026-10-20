@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getActiveRound } from './db';
 import {
-  ActiveRound, EditHole, History, Home, Results, Settings, StartRound, Stats, useDataVersion, type Go, type Route,
+  ActiveRound, EditHole, History, Home, Results, RoundSettings, Settings, StartRound, Stats, useDataVersion, type Go, type Route,
 } from './screens';
 import type { Round } from './types';
 
@@ -29,13 +29,14 @@ export default function App() {
   // correction flow, Home and sync settings are reachable.
   const needsInactive =
     route.name === 'history' || route.name === 'stats' || (route.name === 'results' && active?.round_id !== route.id);
-  const needsActive = route.name === 'active' || route.name === 'edit';
+  const needsActive = route.name === 'active' || route.name === 'edit' || route.name === 'round-settings';
   if ((needsInactive && active) || (needsActive && !active)) return <Home active={active} go={go} />;
 
   switch (route.name) {
     case 'start': return <StartRound go={go} />;
     case 'active': return <ActiveRound round={active!} go={go} />;
     case 'edit': return <EditHole round={active!} go={go} />;
+    case 'round-settings': return <RoundSettings key={active!.round_id} round={active!} go={go} />;
     case 'results': return <Results id={route.id} fresh={route.fresh} go={go} />;
     case 'history': return <History go={go} />;
     case 'stats': return <Stats go={go} />;

@@ -16,6 +16,13 @@ export const emptyForm: FormState = {
 };
 
 export const MAX_PUTTS = 10;
+export function fromHole(hole: Hole): FormState {
+  return {
+    par: hole.par, distance: hole.distance_yards === null ? '' : String(hole.distance_yards),
+    strokes: hole.strokes, strokesTouched: true, putts: hole.putts, puttsTouched: true,
+    penalty: hole.tee_penalty_type, note: hole.note ?? '',
+  };
+}
 export const puttsMax = (f: FormState) => Math.min(MAX_PUTTS, f.strokes ?? MAX_PUTTS);
 
 export function setPar(f: FormState, par: number): FormState {

@@ -2,15 +2,60 @@ import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import {
   ackOutbox, allCompleted, holesForRound, completedHoleNumbers, createRound, getActiveRound, mergeRemote, outbox, saveHole,
-  loadDraft, saveDraft,
+  loadDraft, saveDraft, getHole, getRound, updateRoundSettings, markComplete, readForSync,
 } from './db';
-import { emptyForm, toDraft } from './holeForm';
+import { emptyForm, fromHole, toDraft, toHoleInput } from './holeForm';
 
 const input = (round_id: string, hole_number: number, strokes: number) => ({
   round_id, hole_number, par: 4, distance_yards: null, strokes, putts: 2, tee_penalty_type: 'none' as const,
 });
 
 describe('local store', () => {
+  it('corrects an 18-hole setup to nine without losing holes, notes, or the current draft', async () => {
+    const r = await createRound({ course_name: 'Wrong setup', round_date: '2026-10-20', hole_count: 18, starting_nine: 'front' });
+    await saveHole({ ...input(r.round_id, 1, 5), note: 'Keep this' });
+    const draft = toDraft(r.round_id, 2, { ...emptyForm, note: 'Still typing' });
+    await saveDraft(draft);
+    await updateRoundSettings(r.round_id, { ...r, course_name: 'Correct course', hole_count: 9 });
+    expect(await getRound(r.round_id)).toMatchObject({ course_name: 'Correct course', hole_count: 9, status: 'active' });
+    expect(await getHole(r.round_id, 1)).toMatchObject({ strokes: 5, note: 'Keep this' });
+    expect(await loadDraft(r.round_id)).toEqual(draft);
+    const queued = await readForSync(await outbox());
+    expect(queued.rounds.find((x) => x.round_id === r.round_id)?.hole_count).toBe(9);
+    await updateRoundSettings(r.round_id, { ...r, hole_count: 18 });
+    expect((await getRound(r.round_id))?.hole_count).toBe(18);
+  });
+
+  it('requires explicit finish after changing a fully recorded nine to nine holes', async () => {
+    const r = await createRound({ course_name: 'Nine GC', round_date: '2026-10-20', hole_count: 18, starting_nine: 'front' });
+    for (let n = 1; n <= 9; n++) await saveHole(input(r.round_id, n, 5));
+    await updateRoundSettings(r.round_id, { ...r, hole_count: 9 });
+    expect((await getRound(r.round_id))?.status).toBe('active');
+    expect(await markComplete(r.round_id)).toBe(true);
+    expect((await getRound(r.round_id))?.status).toBe('completed');
+  });
+
+  it('keeps back-nine numbering and rejects changes that would exclude saved holes', async () => {
+    const r = await createRound({ course_name: 'Back GC', round_date: '2026-10-20', hole_count: 18, starting_nine: 'front' });
+    await saveHole(input(r.round_id, 10, 5));
+    await expect(updateRoundSettings(r.round_id, { ...r, hole_count: 9 })).rejects.toThrow('Saved holes');
+    expect((await getRound(r.round_id))?.hole_count).toBe(18);
+    await updateRoundSettings(r.round_id, { ...r, hole_count: 9, starting_nine: 'back' });
+    expect(await getRound(r.round_id)).toMatchObject({ hole_count: 9, starting_nine: 'back' });
+    expect(await completedHoleNumbers(r.round_id)).toEqual([10]);
+  });
+
+  it('edits notes with saved form values, preserves scoring, and allows clearing a misplaced note', async () => {
+    const r = await createRound({ course_name: 'Edit GC', round_date: '2026-10-20', hole_count: 9, starting_nine: 'front' });
+    await saveHole({ ...input(r.round_id, 3, 7), putts: 3, distance_yards: 385, tee_penalty_type: 'drop', note: 'Actually hole 4' });
+    const original = (await getHole(r.round_id, 3))!;
+    const form = fromHole(original);
+    expect(form).toMatchObject({ strokes: 7, putts: 3, distance: '385', penalty: 'drop', note: 'Actually hole 4' });
+    await saveHole(toHoleInput(r.round_id, 3, { ...form, note: '' }));
+    expect(await getHole(r.round_id, 3)).toMatchObject({ strokes: 7, putts: 3, distance_yards: 385, tee_penalty_type: 'drop', note: '' });
+    expect(await completedHoleNumbers(r.round_id)).toEqual([3]);
+  });
+
   it('preserves the current-hole draft during a blind correction and clears it when that hole is saved', async () => {
     const r = await createRound({ course_name: 'Draft GC', round_date: '2026-04-01', hole_count: 9, starting_nine: 'front' });
     await saveHole(input(r.round_id, 1, 4));
@@ -30,7 +75,7 @@ describe('local store', () => {
     expect(await completedHoleNumbers(r.round_id)).toHaveLength(8);
     const res = await saveHole(input(r.round_id, 18, 4), { complete: true });
     expect(res.completed).toBe(true);
-    const [done] = await allCompleted();
+    const done = (await allCompleted()).find((x) => x.round.round_id === r.round_id)!;
     expect(done.holes).toHaveLength(9);
     expect(done.totals.strokes).toBe(5 * 7 + 9 + 4);
   });

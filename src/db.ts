@@ -84,6 +84,24 @@ export function requestPersistence() {
 export const getRound = async (id: string) =>
   run(['rounds'], 'readonly', (s) => wrap<Round | undefined>(s.rounds.get(id)));
 
+export async function updateRoundSettings(roundId: string, input: Pick<Round, 'course_name' | 'round_date' | 'hole_count' | 'starting_nine'>) {
+  if (!input.course_name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(input.round_date)) throw new Error('Enter a course name and date.');
+  await run(['rounds', 'holes', 'outbox'], 'readwrite', async (s) => {
+    const round = await wrap<Round | undefined>(s.rounds.get(roundId));
+    if (!round || round.status !== 'active') throw new Error('Only an active round can be changed.');
+    const next: Round = { ...round, ...input, course_name: input.course_name.trim(), starting_nine: input.hole_count === 18 ? 'front' : input.starting_nine, updated_at: nowIso() };
+    const allowed = new Set(holeNumbers(next));
+    const holes = await wrap<Hole[]>(s.holes.index('by_round').getAll(roundId));
+    if (holes.some((h) => !allowed.has(h.hole_number))) {
+      throw new Error('Saved holes fall outside that nine. Choose the nine containing your saved holes, or keep 18 holes.');
+    }
+    s.rounds.put(next);
+    enqueue(s, 'round', roundId);
+  });
+  emitChange();
+  queuedHook();
+}
+
 export const allRounds = async () =>
   run(['rounds'], 'readonly', (s) => wrap<Round[]>(s.rounds.getAll()));
 
@@ -143,6 +161,9 @@ export async function completedHoleNumbers(roundId: string): Promise<number[]> {
 export const loadDraft = (roundId: string) =>
   run(['drafts'], 'readonly', (s) => wrap<Draft | undefined>(s.drafts.get(roundId)));
 
+export const getHole = (roundId: string, number: number) =>
+  run(['holes'], 'readonly', (s) => wrap<Hole | undefined>(s.holes.get(holeId(roundId, number))));
+
 export const saveDraft = (draft: Draft) =>
   run(['drafts'], 'readwrite', async (s) => {
     s.drafts.put(draft);
@@ -161,8 +182,8 @@ export async function saveHole(
   const ts = nowIso();
   const hole: Hole = { ...input, hole_id: holeId(input.round_id, input.hole_number), updated_at: ts };
   const completed = await run(['rounds', 'holes', 'drafts', 'outbox'], 'readwrite', async (s) => {
-    // A blind replacement can't show the old note, so a blank one keeps it rather than wiping it.
-    if (!hole.note) {
+    // Omitted notes are preserved; an explicit empty string clears a note in the editor.
+    if (hole.note === undefined) {
       const prev = await wrap<Hole | undefined>(s.holes.get(hole.hole_id));
       hole.note = prev?.note ?? '';
     }

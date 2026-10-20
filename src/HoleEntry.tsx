@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { loadDraft, saveDraft, saveHole } from './db';
+import { getHole, loadDraft, saveDraft, saveHole } from './db';
 import {
-  emptyForm, fromDraft, puttsMax, setPar, setPutts, setStrokes, toDraft, toHoleInput, validate, type FormState,
+  fromHole, fromDraft, puttsMax, setPar, setPutts, setStrokes, toDraft, toHoleInput, validate, type FormState,
 } from './holeForm';
 import { Confirm, Stepper } from './ui';
 import type { PenaltyType } from './types';
@@ -14,8 +14,7 @@ const PENALTIES: { value: PenaltyType; label: string; hint?: string }[] = [
 
 /**
  * One hole's input form. `new` mode autosaves a draft and completes the hole;
- * `replace` mode starts blank and overwrites a saved hole (after confirmation) without
- * ever reading the saved values.
+ * `replace` mode loads the selected saved hole so individual fields can be edited.
  */
 export function HoleEntry(props: {
   roundId: string;
@@ -26,15 +25,17 @@ export function HoleEntry(props: {
   onCancel?: () => void;
 }) {
   const { roundId, holeNumber, mode } = props;
-  const [form, setForm] = useState<FormState | null>(mode === 'new' ? null : emptyForm);
+  const [form, setForm] = useState<FormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (mode !== 'new') return;
     let live = true;
-    void loadDraft(roundId).then((d) => live && setForm(fromDraft(d, holeNumber)));
+    if (mode === 'new') void loadDraft(roundId).then((d) => live && setForm(fromDraft(d, holeNumber)));
+    else void getHole(roundId, holeNumber).then((h) => {
+      if (live && h) setForm(fromHole(h));
+    });
     return () => { live = false; };
   }, [roundId, holeNumber, mode]);
 
@@ -51,11 +52,17 @@ export function HoleEntry(props: {
     const problem = validate(form);
     if (problem) { setConfirming(false); return setError(problem); }
     setSaving(true);
-    const { completed } = await saveHole(toHoleInput(roundId, holeNumber, form), {
-      complete: mode === 'new' && !!props.isFinal,
-    });
-    setForm(null); // clear the screen immediately
-    props.onSaved(completed);
+    try {
+      const { completed } = await saveHole(toHoleInput(roundId, holeNumber, form), {
+        complete: mode === 'new' && !!props.isFinal,
+      });
+      setForm(null);
+      props.onSaved(completed);
+    } catch {
+      setSaving(false);
+      setConfirming(false);
+      setError('Could not save this hole. Your entries are still here. Please try again.');
+    }
   };
 
   const submit = () => {
@@ -65,7 +72,7 @@ export function HoleEntry(props: {
     else void commit();
   };
 
-  const label = mode === 'replace' ? 'Replace Hole Entry' : props.isFinal ? 'Finish Round' : 'Complete Hole';
+  const label = mode === 'replace' ? 'Save Changes' : props.isFinal ? 'Finish Round' : 'Complete Hole';
 
   return (
     <>
@@ -114,7 +121,7 @@ export function HoleEntry(props: {
 
         <section>
           <label className="label" htmlFor="note">
-            {mode === 'replace' ? 'Note (blank keeps the existing note)' : 'Note (optional)'}
+            Note (optional)
           </label>
           <textarea
             id="note" className="input note" rows={3} maxLength={1000} placeholder="Anything to remember about this hole"
@@ -133,9 +140,9 @@ export function HoleEntry(props: {
 
       {confirming && (
         <Confirm
-          title={`Replace hole ${holeNumber}?`}
-          body="The saved entry for this hole will be overwritten with what you just entered. This can't be undone."
-          confirmLabel="Replace Hole Entry"
+          title={`Save changes to hole ${holeNumber}?`}
+          body="Your updated entry will be saved. All unchanged fields will be kept."
+          confirmLabel="Save Changes"
           onConfirm={() => void commit()}
           onCancel={() => setConfirming(false)}
         />
