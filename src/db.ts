@@ -112,7 +112,25 @@ export async function getActiveRound(): Promise<Round | null> {
 
 export async function courseNames(): Promise<string[]> {
   const rounds = await allRounds();
-  return [...new Set(rounds.map((r) => r.course_name))].sort((a, b) => a.localeCompare(b));
+  const names = new Map<string, string>();
+  for (const r of rounds.filter((r) => r.status !== 'deleted').sort(byRecent)) {
+    const name = r.course_name.trim();
+    if (name && !names.has(name.toLocaleLowerCase())) names.set(name.toLocaleLowerCase(), name);
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b));
+}
+
+/** Keep a synced tombstone so a pull or another device cannot resurrect a removed round. */
+export async function deleteRound(roundId: string) {
+  await run(['rounds', 'drafts', 'outbox'], 'readwrite', async (s) => {
+    const round = await wrap<Round | undefined>(s.rounds.get(roundId));
+    if (!round || round.status === 'deleted') return;
+    s.rounds.put({ ...round, status: 'deleted', updated_at: nowIso() });
+    s.drafts.delete(roundId);
+    enqueue(s, 'round', roundId);
+  });
+  emitChange();
+  queuedHook();
 }
 
 export async function createRound(input: {
@@ -265,8 +283,18 @@ export async function mergeRemote(rounds: Round[], holes: Hole[]) {
   await run(['rounds', 'holes', 'outbox', 'drafts'], 'readwrite', async (s) => {
     const pending = new Set((await wrap<OutboxItem[]>(s.outbox.getAll())).map((o) => o.key));
     for (const r of rounds) {
-      if (pending.has(`round:${r.round_id}`)) continue;
       const local = await wrap<Round | undefined>(s.rounds.get(r.round_id));
+      if (local?.status === 'deleted') {
+        if (r.status !== 'deleted') enqueue(s, 'round', r.round_id);
+        continue;
+      }
+      if (r.status === 'deleted') {
+        s.rounds.put(r);
+        s.drafts.delete(r.round_id);
+        s.outbox.delete(`round:${r.round_id}`);
+        continue;
+      }
+      if (pending.has(`round:${r.round_id}`)) continue;
       if (!local || r.updated_at >= local.updated_at) s.rounds.put(r);
     }
     for (const h of holes) {

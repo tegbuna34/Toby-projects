@@ -70,6 +70,7 @@ let failures = 0;
 export function syncNow(): Promise<void> {
   running ??= doSync().finally(() => {
     running = null;
+    if (status.state === 'idle' && status.pending > 0) retryTimer = setTimeout(() => void syncNow(), 0);
   });
   return running;
 }
@@ -82,6 +83,11 @@ async function doSync() {
   if (!navigator.onLine) return setStatus({ state: 'offline', pending: items.length });
   setStatus({ state: 'syncing', pending: items.length });
   try {
+    // Learn about deletions on another device before sending an older local round.
+    if (items.length) {
+      const latest = await call<{ rounds: Round[]; holes: Hole[] }>(cfg, { action: 'pull' });
+      await mergeRemote(latest.rounds, latest.holes);
+    }
     if (items.length) {
       const { rounds, holes } = await readForSync(items);
       await call(cfg, { action: 'upsert', rounds, holes });

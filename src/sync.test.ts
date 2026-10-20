@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import {
   ackOutbox, allCompleted, holesForRound, completedHoleNumbers, createRound, getActiveRound, mergeRemote, outbox, saveHole,
-  loadDraft, saveDraft, getHole, getRound, updateRoundSettings, markComplete, readForSync,
+  loadDraft, saveDraft, getHole, getRound, updateRoundSettings, markComplete, readForSync, deleteRound, courseNames,
 } from './db';
 import { emptyForm, fromHole, toDraft, toHoleInput } from './holeForm';
 
@@ -11,6 +11,38 @@ const input = (round_id: string, hole_number: number, strokes: number) => ({
 });
 
 describe('local store', () => {
+  it('deletes rounds from history and stats and queues a deletion that survives a stale sync pull', async () => {
+    const r = await createRound({ course_name: 'Delete QA', round_date: '2026-10-20', hole_count: 9, starting_nine: 'front' });
+    for (let n = 1; n <= 9; n++) await saveHole(input(r.round_id, n, 5));
+    await markComplete(r.round_id);
+    await ackOutbox(await outbox());
+    await deleteRound(r.round_id);
+    expect((await allCompleted()).some((x) => x.round.round_id === r.round_id)).toBe(false);
+    expect((await readForSync(await outbox())).rounds.find((x) => x.round_id === r.round_id)?.status).toBe('deleted');
+    await ackOutbox(await outbox());
+    await mergeRemote([{ ...r, status: 'completed', updated_at: '2999-01-01' }], []);
+    expect((await getRound(r.round_id))?.status).toBe('deleted');
+    expect((await outbox()).some((x) => x.id === r.round_id)).toBe(true);
+    expect(await courseNames()).not.toContain('Delete QA');
+  });
+
+  it('applies deletion from another device even over pending local edits and clears an active draft', async () => {
+    const r = await createRound({ course_name: 'Remote delete', round_date: '2026-10-20', hole_count: 9, starting_nine: 'front' });
+    await saveDraft(toDraft(r.round_id, 1, emptyForm));
+    await mergeRemote([{ ...r, status: 'deleted' }], []);
+    expect((await getRound(r.round_id))?.status).toBe('deleted');
+    expect(await loadDraft(r.round_id)).toBeUndefined();
+    expect((await getActiveRound())?.round_id).not.toBe(r.round_id);
+  });
+
+  it('remembers synced course names and deduplicates capitalization and whitespace', async () => {
+    const r = await createRound({ course_name: '  Browns Mill  ', round_date: '2026-10-20', hole_count: 9, starting_nine: 'front' });
+    await createRound({ course_name: 'browns mill', round_date: '2026-10-20', hole_count: 9, starting_nine: 'front' });
+    await mergeRemote([{ ...r, round_id: 'remote-course', course_name: 'East Lake', status: 'completed' }], []);
+    const names = await courseNames();
+    expect(names.filter((n) => n.toLowerCase() === 'browns mill')).toHaveLength(1);
+    expect(names).toContain('East Lake');
+  });
   it('corrects an 18-hole setup to nine without losing holes, notes, or the current draft', async () => {
     const r = await createRound({ course_name: 'Wrong setup', round_date: '2026-10-20', hole_count: 18, starting_nine: 'front' });
     await saveHole({ ...input(r.round_id, 1, 5), note: 'Keep this' });
