@@ -1,6 +1,6 @@
 export type PenaltyType = 'none' | 'retee' | 'drop';
 // 'abandoned' = an unfinished round the golfer explicitly set aside to start a new one.
-export type RoundStatus = 'active' | 'completed' | 'abandoned';
+export type RoundStatus = 'active' | 'completed' | 'abandoned' | 'deleted';
 
 export interface Round {
   round_id: string;

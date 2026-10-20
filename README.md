@@ -43,3 +43,9 @@ The token is stored only on your device and checked by the script on every reque
 ## Round settings
 
 During a round, open **Round Settings** from hole entry or Home. Edit the course name, date, 9/18-hole length, and front/back nine. Changes preserve saved holes and drafts and sync through the existing round queue. Settings that would exclude saved holes are rejected rather than deleting data. Changing length never finishes a round automatically: tap **Finish Round** to reveal results.
+
+## History and saved courses
+
+Individual results have a top-left **Round History** back button. Use **Delete Round** on results (or Round Settings for an unfinished round) and confirm to remove a round from the app. Deletion syncs using `status: deleted` in the existing Rounds worksheet. Rows remain as tombstones so stale pulls cannot restore them; deleted rounds are excluded from history, stats, and course suggestions. No Apps Script redeployment is needed.
+
+Course fields show matching names from previously saved and synced rounds as you type. Tap a suggestion to fill the name. Suggestions ignore duplicate capitalization and surrounding spaces.

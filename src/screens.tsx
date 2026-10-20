@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  allCompleted, completedHoleNumbers, courseNames, createRound, getRound, getVersion, holesForRound, markComplete, subscribe, updateRoundSettings,
+  allCompleted, completedHoleNumbers, courseNames, createRound, deleteRound, getRound, getVersion, holesForRound, markComplete, subscribe, updateRoundSettings,
 } from './db';
 import { HoleEntry } from './HoleEntry';
 import {
@@ -87,13 +87,33 @@ export function Home({ active, go }: { active: Round | null; go: Go }) {
 
 // ---- Start round --------------------------------------------------------------------------
 
+function CourseInput({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  const [names, setNames] = useState<string[]>([]);
+  const [focused, setFocused] = useState(false);
+  const v = useDataVersion();
+  useEffect(() => {
+    let live = true;
+    void courseNames().then((next) => { if (live) setNames(next); });
+    return () => { live = false; };
+  }, [v]);
+  const matches = names.filter((name) => name.toLocaleLowerCase().includes(value.trim().toLocaleLowerCase())).slice(0, 6);
+  const open = focused && matches.length > 0;
+  return (
+    <section onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false); }}>
+      <label className="label" htmlFor={id}>Course name</label>
+      <input id={id} className="input" autoComplete="off" autoCapitalize="words" value={value} onFocus={() => setFocused(true)} onChange={(e) => onChange(e.target.value)} role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={open ? `${id}-suggestions` : undefined} onKeyDown={(e) => { if (e.key === 'Escape') setFocused(false); }} />
+      {open && <div id={`${id}-suggestions`} role="listbox" aria-label="Previously played courses" className="stack" style={{ marginTop: 8 }}>
+        {matches.map((name) => <button key={name} type="button" className="choice" role="option" aria-selected={name === value} onClick={() => { onChange(name); setFocused(false); }}>{name}</button>)}
+      </div>}
+    </section>
+  );
+}
+
 export function StartRound({ go }: { go: Go }) {
   const [course, setCourse] = useState('');
   const [count, setCount] = useState<9 | 18>(18);
   const [nine, setNine] = useState<'front' | 'back'>('front');
-  const [names, setNames] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { void courseNames().then(setNames); }, []);
   const date = todayLocal();
   const valid = course.trim().length > 0;
 
@@ -108,11 +128,7 @@ export function StartRound({ go }: { go: Go }) {
     <Screen top={<div className="topbar"><button className="link" onClick={() => go({ name: 'home' })}>‹ Home</button></div>}>
       <h1 className="h2" style={{ margin: '8px 0 24px' }}>New round</h1>
       <div className="grow stack-lg">
-        <section>
-          <label className="label" htmlFor="course">Course name</label>
-          <input id="course" className="input" list="courses" autoComplete="off" autoCapitalize="words" value={course} onChange={(e) => setCourse(e.target.value)} />
-          <datalist id="courses">{names.map((n) => <option key={n} value={n} />)}</datalist>
-        </section>
+        <CourseInput id="course" value={course} onChange={setCourse} />
         <section>
           <span className="label">Round length</span>
           <Seg label="Round length" value={count} onChange={setCount} options={[{ value: 9, label: '9 Holes' }, { value: 18, label: '18 Holes' }]} />
@@ -137,6 +153,23 @@ export function StartRound({ go }: { go: Go }) {
 
 // ---- Active round -------------------------------------------------------------------------
 
+function DeleteRoundButton({ round, go }: { round: Round; go: Go }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const remove = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await deleteRound(round.round_id); go({ name: round.status === 'active' ? 'home' : 'history' }); }
+    catch { setError('Could not delete this round. Please try again.'); setBusy(false); setConfirming(false); }
+  };
+  return <>
+    {error && <p className="error" role="alert">{error}</p>}
+    <button className="btn danger" disabled={busy} onClick={() => setConfirming(true)}>Delete Round</button>
+    {confirming && <Confirm title="Delete this round?" body={`${round.course_name} · ${formatDate(round.round_date)} will be removed from the app, including history and stats, on synced devices.`} confirmLabel={busy ? 'Deleting…' : 'Delete Round'} onConfirm={() => void remove()} onCancel={() => { if (!busy) setConfirming(false); }} />}
+  </>;
+}
+
 export function RoundSettings({ round, go }: { round: Round; go: Go }) {
   const [course, setCourse] = useState(round.course_name);
   const [date, setDate] = useState(round.round_date);
@@ -158,13 +191,13 @@ export function RoundSettings({ round, go }: { round: Round; go: Go }) {
       <h1 className="h2" style={{ margin: '8px 0 16px' }}>Round Settings</h1>
       <p className="sub" style={{ marginBottom: 24 }}>Update your setup. Saved holes and notes stay with this round.</p>
       <div className="grow stack-lg">
-        <section><label className="label" htmlFor="round-course">Course name</label><input id="round-course" className="input" value={course} onChange={(e) => setCourse(e.target.value)} /></section>
+        <CourseInput id="round-course" value={course} onChange={setCourse} />
         <section><label className="label" htmlFor="round-date">Date</label><input id="round-date" className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></section>
         <section><span className="label">Round length</span><Seg label="Round length" value={count} onChange={setCount} options={[{ value: 9, label: '9 Holes' }, { value: 18, label: '18 Holes' }]} /></section>
         {count === 9 && <section><span className="label">Starting nine</span><Seg label="Starting nine" value={nine} onChange={setNine} options={[{ value: 'front', label: 'Front (1–9)' }, { value: 'back', label: 'Back (10–18)' }]} /></section>}
         {error && <p className="error" role="alert">{error}</p>}
       </div>
-      <div className="footer-bar"><button className="btn" disabled={busy || !course.trim() || !date} onClick={() => void save()}>Save Settings</button></div>
+      <div className="footer-bar stack"><button className="btn" disabled={busy || !course.trim() || !date} onClick={() => void save()}>Save Settings</button><DeleteRoundButton round={round} go={go} /></div>
     </Screen>
   );
 }
@@ -301,7 +334,7 @@ export function Results({ id, fresh, go }: { id: string; fresh?: boolean; go: Go
   const notes = holes.filter((h) => h.note);
 
   return (
-    <Screen>
+    <Screen top={<div className="topbar"><button className="link" onClick={() => go({ name: 'history' })}>‹ Round History</button></div>}>
       <div className="hero">
         <p className="eyebrow">{fresh ? 'Round Complete' : 'Round'}</p>
         <p style={{ fontSize: 22, fontWeight: 600, marginTop: 4 }}>{round.course_name}</p>
@@ -356,10 +389,7 @@ export function Results({ id, fresh, go }: { id: string; fresh?: boolean; go: Go
           </section>
         )}
 
-        <div className="stack">
-          <button className="btn" onClick={() => go({ name: 'home' })}>Return Home</button>
-          <button className="btn secondary" onClick={() => go({ name: 'history' })}>View Round History</button>
-        </div>
+        <DeleteRoundButton round={round} go={go} />
       </div>
     </Screen>
   );
