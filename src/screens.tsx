@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
-  allCompleted, completedHoleNumbers, courseNames, createRound, getRound, getVersion, holesForRound, markComplete, subscribe,
+  allCompleted, completedHoleNumbers, courseNames, createRound, getRound, getVersion, holesForRound, markComplete, subscribe, updateRoundSettings,
 } from './db';
 import { HoleEntry } from './HoleEntry';
 import {
@@ -15,6 +15,7 @@ export type Route =
   | { name: 'start' }
   | { name: 'active' }
   | { name: 'edit' }
+  | { name: 'round-settings' }
   | { name: 'results'; id: string; fresh?: boolean }
   | { name: 'history' }
   | { name: 'stats' }
@@ -53,6 +54,7 @@ export function Home({ active, go }: { active: Round | null; go: Go }) {
               <p className="eyebrow">Started {formatDate(active.round_date)}{current ? ` · Hole ${current}` : ''}</p>
             </div>
             <button className="btn" onClick={() => go({ name: 'active' })}>Resume Round</button>
+            <button className="btn secondary" onClick={() => go({ name: 'round-settings' })}>Round Settings</button>
             <button className="btn secondary" onClick={() => setConfirming(true)}>Start New Round</button>
           </div>
         ) : (
@@ -135,6 +137,38 @@ export function StartRound({ go }: { go: Go }) {
 
 // ---- Active round -------------------------------------------------------------------------
 
+export function RoundSettings({ round, go }: { round: Round; go: Go }) {
+  const [course, setCourse] = useState(round.course_name);
+  const [date, setDate] = useState(round.round_date);
+  const [count, setCount] = useState<9 | 18>(round.hole_count);
+  const [nine, setNine] = useState<'front' | 'back'>(round.starting_nine);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      await updateRoundSettings(round.round_id, { course_name: course, round_date: date, hole_count: count, starting_nine: nine });
+      go({ name: 'active' });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save round settings. Please try again.');
+    } finally { setBusy(false); }
+  };
+  return (
+    <Screen top={<div className="topbar"><button className="link" onClick={() => go({ name: 'active' })}>‹ Back to Round</button></div>}>
+      <h1 className="h2" style={{ margin: '8px 0 16px' }}>Round Settings</h1>
+      <p className="sub" style={{ marginBottom: 24 }}>Update your setup. Saved holes and notes stay with this round.</p>
+      <div className="grow stack-lg">
+        <section><label className="label" htmlFor="round-course">Course name</label><input id="round-course" className="input" value={course} onChange={(e) => setCourse(e.target.value)} /></section>
+        <section><label className="label" htmlFor="round-date">Date</label><input id="round-date" className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></section>
+        <section><span className="label">Round length</span><Seg label="Round length" value={count} onChange={setCount} options={[{ value: 9, label: '9 Holes' }, { value: 18, label: '18 Holes' }]} /></section>
+        {count === 9 && <section><span className="label">Starting nine</span><Seg label="Starting nine" value={nine} onChange={setNine} options={[{ value: 'front', label: 'Front (1–9)' }, { value: 'back', label: 'Back (10–18)' }]} /></section>}
+        {error && <p className="error" role="alert">{error}</p>}
+      </div>
+      <div className="footer-bar"><button className="btn" disabled={busy || !course.trim() || !date} onClick={() => void save()}>Save Settings</button></div>
+    </Screen>
+  );
+}
+
 function useCompleted(roundId: string) {
   const v = useDataVersion();
   const [done, setDone] = useState<number[] | null>(null);
@@ -170,6 +204,7 @@ export function ActiveRound({ round, go }: { round: Round; go: Go }) {
       }
     >
       <div key={current} className="fade" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <button className="link quiet" style={{ alignSelf: 'flex-end' }} onClick={() => go({ name: 'round-settings' })}>Round Settings</button>
         <header style={{ marginTop: 8 }}>
           <p className="eyebrow">{round.course_name}</p>
           <h1 className="title">Hole {current}</h1>
@@ -194,6 +229,8 @@ function FinishPending({ round, go }: { round: Round; go: Go }) {
       <div className="grow" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <p className="eyebrow">{round.course_name}</p>
         <h1 className="title">All holes recorded</h1>
+        <button className="link" onClick={() => go({ name: 'round-settings' })}>Round Settings</button>
+        <button className="link" onClick={() => go({ name: 'edit' })}>Edit Previous Hole</button>
       </div>
       <FinishButton round={round} go={go} />
     </Screen>
@@ -220,9 +257,9 @@ export function EditHole({ round, go }: { round: Round; go: Go }) {
         <header style={{ marginTop: 8 }}>
           <p className="eyebrow">{round.course_name}</p>
           <h1 className="title">Hole {picked}</h1>
-          <p className="eyebrow" style={{ marginTop: 4 }}>Replace Hole Entry · enter everything again</p>
+          <p className="eyebrow" style={{ marginTop: 4 }}>Edit saved entry</p>
         </header>
-        <HoleEntry roundId={round.round_id} holeNumber={picked} mode="replace" onSaved={() => go({ name: 'active' })} onCancel={() => setPicked(null)} />
+        <HoleEntry key={picked} roundId={round.round_id} holeNumber={picked} mode="replace" onSaved={() => go({ name: 'active' })} onCancel={() => setPicked(null)} />
       </Screen>
     );
   }
@@ -230,7 +267,7 @@ export function EditHole({ round, go }: { round: Round; go: Go }) {
   return (
     <Screen top={<div className="topbar"><button className="link" onClick={() => go({ name: 'active' })}>‹ Back</button></div>}>
       <h1 className="h2" style={{ margin: '8px 0 4px' }}>Edit Previous Hole</h1>
-      <p className="sub" style={{ marginBottom: 24 }}>Choose a hole to enter again. Its saved values stay hidden and will be replaced.</p>
+      <p className="sub" style={{ marginBottom: 24 }}>Choose a hole to edit. Its saved details will be shown so you can change only what you need.</p>
       <div className="chip-grid">
         {done.map((n) => (
           <button key={n} className="choice" style={{ minHeight: 64, fontSize: 20 }} onClick={() => setPicked(n)} aria-label={`Hole ${n}`}>

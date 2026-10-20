@@ -17,9 +17,9 @@ Pushing to the default branch deploys `dist/` to GitHub Pages via `.github/workf
 
 ## How the blind rule is enforced
 
-- While a round is active, the only data read by the UI is *which hole numbers are done* (`completedHoleNumbers`) — hole records are never loaded into the active-round screens.
+- Normal hole entry reads completed hole numbers only. Saved hole values are loaded only when you deliberately choose a hole in **Edit Previous Hole**.
 - History, Stats and Results routes are blocked while a round is active (App.tsx).
-- **Edit Previous Hole** lists hole numbers only and opens a blank form labelled *Replace Hole Entry*, with a confirmation before the saved record is overwritten.
+- **Edit Previous Hole** lists hole numbers only, then opens that hole with its saved values. Change only the fields you need and confirm **Save Changes**. An empty note clears it; the current-hole draft is preserved.
 - The hole currently on screen has its draft autosaved to IndexedDB, so an app kill resumes the same hole with the same inputs.
 
 ## Google Sheets sync
@@ -37,5 +37,9 @@ The token is stored only on your device and checked by the script on every reque
 
 - Starting a new round while one is unfinished asks for confirmation; the old round is kept with status `abandoned` (hidden from history and stats) rather than deleted.
 - Rounds carry an extra `updated_at` column (used for sync merging); penalties are a classification only and never change strokes.
-- Each hole has an optional free-text note. It is blind like everything else (never shown after the hole is saved) and appears under "Hole notes" on the results screen. A blind replacement with a blank note keeps the existing note. Existing Sheets get a `note` column added automatically on the next sync (redeploy `Code.gs`).
+- Each hole has an optional free-text note. It is blind like everything else (never shown after the hole is saved) and appears under "Hole notes" on the results screen. Editing loads the saved note; clearing it removes it. Existing Sheets get a `note` column added automatically on the next sync (redeploy `Code.gs`).
 - Stats and charts keep 9- and 18-hole rounds separate and use completed rounds only.
+
+## Round settings
+
+During a round, open **Round Settings** from hole entry or Home. Edit the course name, date, 9/18-hole length, and front/back nine. Changes preserve saved holes and drafts and sync through the existing round queue. Settings that would exclude saved holes are rejected rather than deleting data. Changing length never finishes a round automatically: tap **Finish Round** to reveal results.
